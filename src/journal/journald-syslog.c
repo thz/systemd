@@ -22,6 +22,9 @@
 #include <unistd.h>
 #include <stddef.h>
 #include <sys/epoll.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include "systemd/sd-messages.h"
 #include "socket-util.h"
@@ -420,7 +423,58 @@ void server_process_syslog_message(
         free(syslog_pid);
 }
 
-int server_open_syslog_socket(Server *s) {
+static int server_open_syslog_socket_INET(Server *s) {
+        int one, r;
+
+        assert(s);
+
+        if (s->syslog_fd < 0) {
+                s->forward_syslog_dest.in.sin_family = AF_INET;
+                s->forward_syslog_dest.in.sin_port = htons(514);
+
+                if (0 == inet_aton("192.168.13.82", &s->forward_syslog_dest.in.sin_addr)) {
+                        log_error("inet_aton() failed: %m");
+                }
+
+                s->syslog_fd = socket(AF_INET, SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK, 0);
+                if (s->syslog_fd < 0) {
+                        log_error("socket() failed: %m");
+                        return -errno;
+                }
+
+        } else
+                fd_nonblock(s->syslog_fd, 1);
+
+#ifdef HAVE_SELINUX
+        if (use_selinux()) {
+                one = 1;
+                r = setsockopt(s->syslog_fd, SOL_SOCKET, SO_PASSSEC, &one, sizeof(one));
+                if (r < 0)
+                        log_warning("SO_PASSSEC failed: %m");
+        }
+#endif
+
+        one = 1;
+        r = setsockopt(s->syslog_fd, SOL_SOCKET, SO_TIMESTAMP, &one, sizeof(one));
+        if (r < 0) {
+                log_error("SO_TIMESTAMP failed: %m");
+                return -errno;
+        }
+
+        r = sd_event_add_io(s->event, &s->syslog_event_source, s->syslog_fd, EPOLLIN, process_datagram, s);
+        if (r < 0) {
+                log_error("Failed to add syslog server fd to event loop: %s", strerror(-r));
+                return r;
+        }
+        r = sendto(s->syslog_fd, "Hello World!", 12, 0, &s->forward_syslog_dest.sa, sizeof(s->forward_syslog_dest.in));
+        if (r < 0) {
+                log_error("Failed to send initial syslog-remote-forward message: %s", strerror(-r));
+                return r;
+        }
+
+        return 0;
+}
+static int server_open_syslog_socket_UNIX(Server *s) {
         int one, r;
 
         assert(s);
@@ -479,6 +533,11 @@ int server_open_syslog_socket(Server *s) {
         }
 
         return 0;
+}
+
+int server_open_syslog_socket(Server *s) {
+        return server_open_syslog_socket_INET(s);
+        // return server_open_syslog_socket_UNIX(s);
 }
 
 void server_maybe_warn_forward_syslog_missed(Server *s) {

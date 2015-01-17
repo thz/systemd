@@ -35,6 +35,8 @@
 #include "journald-rate-limit.h"
 #include "list.h"
 
+#include "socket-util.h"
+
 typedef enum Storage {
         STORAGE_AUTO,
         STORAGE_VOLATILE,
@@ -98,6 +100,8 @@ typedef struct Server {
         bool forward_to_syslog;
         bool forward_to_console;
         bool forward_to_wall;
+
+        union sockaddr_union forward_syslog_dest;
 
         unsigned n_forward_syslog_missed;
         usec_t last_warn_forward_syslog_missed;
