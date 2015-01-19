@@ -1449,7 +1449,7 @@ int server_init(Server *s) {
         assert(s);
 
         zero(*s);
-        s->syslog_fd = s->native_fd = s->stdout_fd = s->dev_kmsg_fd = s->hostname_fd = -1;
+        s->syslog_fd = s->remote_syslog_fd = s->native_fd = s->stdout_fd = s->dev_kmsg_fd = s->hostname_fd = -1;
         s->compress = true;
         s->seal = true;
 

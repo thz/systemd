@@ -454,19 +454,12 @@ static int server_open_syslog_socket_INET(Server *s) {
         }
 #endif
 
-        one = 1;
-        r = setsockopt(s->remote_syslog_fd, SOL_SOCKET, SO_TIMESTAMP, &one, sizeof(one));
-        if (r < 0) {
-                log_error("SO_TIMESTAMP failed: %m");
-                return -errno;
-        }
-
         r = sd_event_add_io(s->event, &s->syslog_event_source, s->remote_syslog_fd, EPOLLIN, process_datagram, s);
         if (r < 0) {
                 log_error("Failed to add syslog server fd to event loop: %s", strerror(-r));
                 return r;
         }
-        r = sendto(s->remote_syslog_fd, "Hello World!", 12, 0, &s->remote_syslog_dest.sa, sizeof(s->remote_syslog_dest.in));
+        r = sendto(s->remote_syslog_fd, "remote syslog-forwarding started.\n", 34, 0, &s->remote_syslog_dest.sa, sizeof(s->remote_syslog_dest.in));
         if (r < 0) {
                 log_error("Failed to send initial syslog-remote-forward message: %s", strerror(-r));
                 return r;
