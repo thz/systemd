@@ -58,6 +58,7 @@ typedef struct StdoutStream StdoutStream;
 
 typedef struct Server {
         int syslog_fd;
+        int remote_syslog_fd;
         int native_fd;
         int stdout_fd;
         int dev_kmsg_fd;
@@ -101,7 +102,7 @@ typedef struct Server {
         bool forward_to_console;
         bool forward_to_wall;
 
-        union sockaddr_union forward_syslog_dest;
+        union sockaddr_union remote_syslog_dest;
 
         unsigned n_forward_syslog_missed;
         usec_t last_warn_forward_syslog_missed;
