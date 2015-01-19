@@ -116,17 +116,16 @@ static void forward_remote_syslog(Server *s, const struct iovec *iovec, unsigned
         assert(s);
         assert(iovec);
 
-		if (s->remote_syslog_fd < 0) return;
-		struct msghdr msghdr = {
-			.msg_iov = (struct iovec *) iovec,
-			.msg_iovlen = n_iovec,
-			.msg_name = (struct sockaddr*) &s->remote_syslog_dest.sa,
-			.msg_namelen = sizeof(s->remote_syslog_dest.in),
-		};
-		int r = sendmsg(s->remote_syslog_fd, &msghdr, MSG_NOSIGNAL);
-		if (r < 0) {
-			return r;
-		}
+        if (s->remote_syslog_fd < 0) return;
+        struct msghdr msghdr = {
+                .msg_iov = (struct iovec *) iovec,
+                .msg_iovlen = n_iovec,
+                .msg_name = (struct sockaddr*) &s->remote_syslog_dest.sa,
+                .msg_namelen = sizeof(s->remote_syslog_dest.in),
+        };
+        sendmsg(s->remote_syslog_fd, &msghdr, MSG_NOSIGNAL);
+        // this might fail and indeed, we do ignore it
+        // (logging shall not wait for network to become available)
 }
 
 static void forward_syslog_raw(Server *s, int priority, const char *buffer, struct ucred *ucred, struct timeval *tv) {
@@ -173,10 +172,10 @@ void server_forward_syslog(Server *s, int priority, const char *identifier, cons
                 return;
         IOVEC_SET_STRING(iovec[n++], header_time);
 
-		if (!isempty(s->hostname_field)) {
-			IOVEC_SET_STRING(iovec[n++], s->hostname_field);
-			IOVEC_SET_STRING(iovec[n++], " ");
-		}
+        if (!isempty(s->hostname_field)) {
+                IOVEC_SET_STRING(iovec[n++], s->hostname_field);
+                IOVEC_SET_STRING(iovec[n++], " ");
+        }
 
         /* Third: identifier and PID */
         if (ucred) {
@@ -453,12 +452,21 @@ static int server_open_syslog_socket_INET(Server *s) {
         assert(s);
 
         if (s->remote_syslog_fd < 0) {
-                s->remote_syslog_dest.in.sin_family = AF_INET;
+                if (s->remote_syslog_dest.in.sin_addr.s_addr == INADDR_NONE) {
+                    log_warning("no remote syslog forwarding target configured.");
+                    return 0;
+                } else {
+                    log_warning("remote syslog forwarding target configured: %s",
+                            inet_ntoa(s->remote_syslog_dest.in.sin_addr));
+                }
+                assert(s->remote_syslog_dest.in.sin_family == AF_INET); // set in config
                 s->remote_syslog_dest.in.sin_port = htons(514);
 
+                /*
                 if (0 == inet_aton("192.168.13.82", &s->remote_syslog_dest.in.sin_addr)) {
                         log_error("inet_aton() failed: %m");
                 }
+                */
 
                 s->remote_syslog_fd = socket(AF_INET, SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK, 0);
                 if (s->remote_syslog_fd < 0) {
@@ -481,12 +489,6 @@ static int server_open_syslog_socket_INET(Server *s) {
         r = sd_event_add_io(s->event, &s->syslog_event_source, s->remote_syslog_fd, EPOLLIN, process_datagram, s);
         if (r < 0) {
                 log_error("Failed to add syslog server fd to event loop: %s", strerror(-r));
-                return r;
-        }
-        r = sendto(s->remote_syslog_fd, "remote syslog-forwarding started.\n", 34, 0,
-					&s->remote_syslog_dest.sa, sizeof(s->remote_syslog_dest.in));
-        if (r < 0) {
-                log_error("Failed to send initial syslog-remote-forward message: %s", strerror(-r));
                 return r;
         }
 
@@ -556,7 +558,7 @@ static int server_open_syslog_socket_UNIX(Server *s) {
 int server_open_syslog_socket(Server *s) {
         int r = server_open_syslog_socket_UNIX(s);
         server_open_syslog_socket_INET(s);
-		return r;
+        return r;
 }
 
 void server_maybe_warn_forward_syslog_missed(Server *s) {
@@ -575,3 +577,4 @@ void server_maybe_warn_forward_syslog_missed(Server *s) {
         s->n_forward_syslog_missed = 0;
         s->last_warn_forward_syslog_missed = n;
 }
+// vim:expandtab:ts=8:sw=8

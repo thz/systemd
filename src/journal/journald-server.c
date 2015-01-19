@@ -25,6 +25,7 @@
 #include <sys/statvfs.h>
 #include <sys/mman.h>
 #include <sys/timerfd.h>
+#include <net/if.h>
 
 #include <libudev.h>
 
@@ -51,6 +52,7 @@
 #include "journald-console.h"
 #include "journald-native.h"
 #include "journald-server.h"
+#include "in-addr-util.h"
 
 #ifdef HAVE_ACL
 #include <sys/acl.h>
@@ -1349,6 +1351,39 @@ static int server_dispatch_sync(sd_event_source *es, usec_t t, void *userdata) {
         return 0;
 }
 
+
+int config_parse_remotesyslogtarget(const char *unit,
+                const char *filename, unsigned line,
+                const char *section, unsigned section_line,
+                const char *lvalue, int ltype,
+                const char *rvalue,
+                void *data, void *userdata) {
+
+        int r;
+        int family;
+        union in_addr_union buffer;
+
+        Server *s = userdata;
+
+        r = in_addr_from_string_auto(rvalue, &family, &buffer);
+        if (r < 0) {
+            log_syntax(unit, LOG_ERR, filename, line, EINVAL,
+                    "RemoteSyslogTarget is invalid, ignoring assignment: %s", rvalue);
+            return 0;
+        }
+        if (family != AF_INET) {
+            log_syntax(unit, LOG_ERR, filename, line, EINVAL,
+                    "RemoteSyslogTarget is non-AF_INET, ignoring assignment: %s", rvalue);
+            // sorry for not taking care of AF_INET6 right now
+            return 0;
+        }
+        s->remote_syslog_dest.in.sin_family = family;
+        s->remote_syslog_dest.in.sin_addr = buffer.in;
+        s->remote_syslog_dest.in.sin_port = htons(514);
+        assert(s);
+        return 0;
+}
+
 int server_schedule_sync(Server *s, int priority) {
         int r;
 
@@ -1450,6 +1485,8 @@ int server_init(Server *s) {
 
         zero(*s);
         s->syslog_fd = s->remote_syslog_fd = s->native_fd = s->stdout_fd = s->dev_kmsg_fd = s->hostname_fd = -1;
+        s->remote_syslog_dest.in.sin_addr.s_addr = INADDR_NONE;
+
         s->compress = true;
         s->seal = true;
 
@@ -1660,3 +1697,4 @@ void server_done(Server *s) {
         if (s->udev)
                 udev_unref(s->udev);
 }
+// vim:expandtab:ts=8:sw=8:nolist
