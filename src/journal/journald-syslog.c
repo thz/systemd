@@ -122,11 +122,8 @@ static void forward_remote_syslog(Server *s, int priority, const char *buffer) {
 			int r = sendto(s->remote_syslog_fd, "hello world\n", 12, 0,
 						&s->remote_syslog_dest.sa, sizeof(s->remote_syslog_dest.in));
 			if (r < 0) {
-				log_error("Failed to send bogus syslog message: %s", strerror(-r));
 				return r;
 			}
-		} else {
-			log_error("remote_syslog_fd is 0.");
 		}
 }
 
