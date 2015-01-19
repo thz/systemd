@@ -112,6 +112,24 @@ static void forward_syslog_iovec(Server *s, const struct iovec *iovec, unsigned 
                 log_debug("Failed to forward syslog message: %m");
 }
 
+static void forward_remote_syslog(Server *s, int priority, const char *buffer) {
+        assert(s);
+        assert(buffer);
+
+        if (LOG_PRI(priority) > s->max_level_syslog)
+                return;
+		if (s->remote_syslog_fd >= 0) {
+			int r = sendto(s->remote_syslog_fd, "hello world\n", 12, 0,
+						&s->remote_syslog_dest.sa, sizeof(s->remote_syslog_dest.in));
+			if (r < 0) {
+				log_error("Failed to send bogus syslog message: %s", strerror(-r));
+				return r;
+			}
+		} else {
+			log_error("remote_syslog_fd is 0.");
+		}
+}
+
 static void forward_syslog_raw(Server *s, int priority, const char *buffer, struct ucred *ucred, struct timeval *tv) {
         struct iovec iovec;
 
@@ -123,14 +141,7 @@ static void forward_syslog_raw(Server *s, int priority, const char *buffer, stru
 
         IOVEC_SET_STRING(iovec, buffer);
         forward_syslog_iovec(s, &iovec, 1, ucred, tv);
-		if (s->remote_syslog_fd >= 0) {
-			int r = sendto(s->remote_syslog_fd, "hello world\n", 12, 0,
-						&s->remote_syslog_dest.sa, sizeof(s->remote_syslog_dest.in));
-			if (r < 0) {
-				log_error("Failed to send initial syslog-remote-forward message: %s", strerror(-r));
-				return r;
-			}
-		}
+        forward_remote_syslog(s, priority, buffer); 
 }
 
 void server_forward_syslog(Server *s, int priority, const char *identifier, const char *message, struct ucred *ucred, struct timeval *tv) {
@@ -186,7 +197,7 @@ void server_forward_syslog(Server *s, int priority, const char *identifier, cons
         IOVEC_SET_STRING(iovec[n++], message);
 
         forward_syslog_iovec(s, iovec, n, ucred, tv);
-        forward_remote_syslog(s, message);
+        forward_remote_syslog(s, priority, message); 
 
         free(ident_buf);
 }
