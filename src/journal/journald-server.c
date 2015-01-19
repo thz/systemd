@@ -25,7 +25,6 @@
 #include <sys/statvfs.h>
 #include <sys/mman.h>
 #include <sys/timerfd.h>
-#include <net/if.h>
 
 #include <libudev.h>
 
@@ -1364,6 +1363,7 @@ int config_parse_remotesyslogtarget(const char *unit,
         union in_addr_union buffer;
 
         Server *s = userdata;
+        assert(s);
 
         r = in_addr_from_string_auto(rvalue, &family, &buffer);
         if (r < 0) {
@@ -1380,7 +1380,6 @@ int config_parse_remotesyslogtarget(const char *unit,
         s->remote_syslog_dest.in.sin_family = family;
         s->remote_syslog_dest.in.sin_addr = buffer.in;
         s->remote_syslog_dest.in.sin_port = htons(514);
-        assert(s);
         return 0;
 }
 
