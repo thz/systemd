@@ -1350,7 +1350,6 @@ static int server_dispatch_sync(sd_event_source *es, usec_t t, void *userdata) {
         return 0;
 }
 
-
 int config_parse_remotesyslogtarget(const char *unit,
                 const char *filename, unsigned line,
                 const char *section, unsigned section_line,
@@ -1696,4 +1695,3 @@ void server_done(Server *s) {
         if (s->udev)
                 udev_unref(s->udev);
 }
-// vim:expandtab:ts=8:sw=8:nolist
