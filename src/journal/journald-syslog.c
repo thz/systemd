@@ -175,7 +175,7 @@ static void forward_syslog_raw(Server *s, int priority, const char *buffer, stru
 }
 
 void server_forward_syslog(Server *s, int priority, const char *identifier, const char *message, struct ucred *ucred, struct timeval *tv) {
-        struct iovec iovec[7];
+        struct iovec iovec[5];
         char header_priority[6], header_time[64], header_pid[16];
         int n = 0;
         time_t t;
@@ -200,14 +200,9 @@ void server_forward_syslog(Server *s, int priority, const char *identifier, cons
         tm = localtime(&t);
         if (!tm)
                 return;
-        if (strftime(header_time, sizeof(header_time), "+%Y-%m-%dT%H:%M:%S%z ", tm) <= 0)
+        if (strftime(header_time, sizeof(header_time), "%h %e %T ", tm) <= 0)
                 return;
         IOVEC_SET_STRING(iovec[n++], header_time);
-
-        if (!isempty(s->hostname_field)) {
-                IOVEC_SET_STRING(iovec[n++], s->hostname_field);
-                IOVEC_SET_STRING(iovec[n++], " ");
-        }
 
         /* Third: identifier and PID */
         if (ucred) {
