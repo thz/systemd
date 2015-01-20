@@ -1306,6 +1306,12 @@ static int server_parse_proc_cmdline(Server *s) {
                                 log_warning("Failed to parse forward to syslog switch %s. Ignoring.", word + 35);
                         else
                                 s->forward_to_syslog = r;
+                } else if (startswith(word, "systemd.journald.forward_to_remote_syslog=")) {
+                        r = parse_boolean(word + 42);
+                        if (r < 0)
+                                log_warning("Failed to parse forward to remote syslog switch %s. Ignoring.", word + 42);
+                        else
+                                s->forward_to_remote_syslog = r;
                 } else if (startswith(word, "systemd.journald.forward_to_kmsg=")) {
                         r = parse_boolean(word + 33);
                         if (r < 0)

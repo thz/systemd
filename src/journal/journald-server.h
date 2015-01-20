@@ -99,6 +99,7 @@ typedef struct Server {
 
         bool forward_to_kmsg;
         bool forward_to_syslog;
+        bool forward_to_remote_syslog;
         bool forward_to_console;
         bool forward_to_wall;
 

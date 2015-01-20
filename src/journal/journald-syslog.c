@@ -141,7 +141,7 @@ static int maybe_open_remote_syslog(Server *s) {
         return s->remote_syslog_fd;
 }
 
-static void forward_remote_syslog(Server *s, const struct iovec *iovec, unsigned n_iovec) {
+static void forward_remote_syslog_iovec(Server *s, const struct iovec *iovec, unsigned n_iovec) {
         int fd;
         assert(s);
         assert(iovec);
@@ -170,16 +170,63 @@ static void forward_syslog_raw(Server *s, int priority, const char *buffer, stru
 
         IOVEC_SET_STRING(iovec, buffer);
         forward_syslog_iovec(s, &iovec, 1, ucred, tv);
-        forward_remote_syslog(s, &iovec, 1);
+}
+
+static int syslog_fill_iovec(SyslogMessage *sm, struct iovec **iovec, int *n_iovec) {
+        enum rfc5424 {PRIVER=0, TIMESTAMP, HOSTNAME, APPNAME, PROCID, MSGID, STRUDATA, MSG};
+
+        if (*n_iovec < MSG+1) return -1;
+
+        /* priority and version */
+        snprintf(sm->_priver, 8, "<%03i>1 ", sm->priority);
+        sm->_priver[7] = 0;
+        *iovec[PRIVER]->iov_base = sm->_priver;
+        *iovec[PRIVER]->iov_len = 7;
+
+        /* timestamp */
+        if (strftime(header_time, sizeof(header_time), "%Y-%m-%dT%H:%M:%S%z ", tm) <= 0) {
+                IOVEC_SET_STRING(*iovec[TIMESTAMP], "- ");
+        } else {
+                IOVEC_SET_STRING(*iovec[TIMESTAMP], sm->_timestamp);
+        }
+
+        IOVEC_SET_STRING(*iovec[HOSTNAME], "journald-host ");
+        IOVEC_SET_STRING(*iovec[APPNAME], "appname ");
+
+        if (sm->procid) {
+                snprintf(sm->_procid, sizeof(sm->_procid), "["PID_FMT"]: ", sm->procid);
+                char_array_0(sm->_procid);
+        } else {
+                sm->_procid = "- ";
+        }
+        IOVEC_SET_STRING(*iovec[PROCID], sm->_procid);
+
+        IOVEC_SET_STRING(*iovec[MSGID], "msgid ");
+        IOVEC_SET_STRING(*iovec[STRUDATA], "strudata ");
+
+        IOVEC_SET_STRING(*iovec[MSG], sm->message);
+        return *n_iovec;
+}
+
+static void syslog_init_message(SyslogMessage *sm) {
+        /* some parts of a rfc5424 syslog message may
+         * be carry a "-" if respective data is n/a.
+         */
+        sm->priority = 14;
+        sm->procid = 0;
+        sm->hostname =
+        sm->app_name =
+        sm->msgid = "- ";
+        sm->message = "";
 }
 
 void server_forward_syslog(Server *s, int priority, const char *identifier, const char *message, struct ucred *ucred, struct timeval *tv) {
         struct iovec iovec[9];
-        char header_priority[8], header_time[64], header_pid[16];
         int n = 0;
         time_t t;
-        struct tm *tm;
+        struct tm tm;
         char *ident_buf = NULL;
+        SyslogMessage sm;
 
         assert(s);
         assert(priority >= 0);
@@ -189,61 +236,41 @@ void server_forward_syslog(Server *s, int priority, const char *identifier, cons
         if (LOG_PRI(priority) > s->max_level_syslog)
                 return;
 
-		/* obey rfc5424:
-		 *       SYSLOG-MSG      = HEADER SP STRUCTURED-DATA [SP MSG]
-		 *
-		 *       HEADER          = PRI VERSION SP TIMESTAMP SP HOSTNAME
-		 *                         SP APP-NAME SP PROCID SP MSGID
-		 * [...]
-		 */
+        syslog_init_message(&sm);
 
         /* First: priority field and VERSION */
-        snprintf(header_priority, sizeof(header_priority), "<%03i>1 ", priority);
-        char_array_0(header_priority);
-        IOVEC_SET_STRING(iovec[n++], header_priority);
+        sm.priority = priority;
 
         /* Second: timestamp */
         t = tv ? tv->tv_sec : ((time_t) (now(CLOCK_REALTIME) / USEC_PER_SEC));
-        tm = localtime(&t);
-        if (!tm)
+        if (!localtime_r(&t, &sm.timestamp))
                 return;
-        if (strftime(header_time, sizeof(header_time), "%Y-%m-%dT%H:%M:%S%z ", tm) <= 0)
-                return;
-        IOVEC_SET_STRING(iovec[n++], header_time); // TIMESTAMP
 
-		/* HOSTNAME */
-		IOVEC_SET_STRING(iovec[n++], "journald-host ");
+        if (!isempty(s->hostname_field))
+                sm.hostname = s->hostname_field;
 
-        /* Third: identifier and PID (a.k.a. APP-NAME and PROCID) */
+        sm.msgid = "server_forward_syslog";
+
         if (ucred) {
                 if (!identifier) {
                         get_process_comm(ucred->pid, &ident_buf);
                         identifier = ident_buf;
                 }
 
-                snprintf(header_pid, sizeof(header_pid), " ["PID_FMT"]: ", ucred->pid);
-                char_array_0(header_pid);
+                sm.procid = ucred->pid;
+        }
 
-                if (!identifier) identifier = "-";
-                IOVEC_SET_STRING(iovec[n++], identifier);
-                IOVEC_SET_STRING(iovec[n++], header_pid);
-        } else {
-                if (!identifier) identifier = "-";
-                IOVEC_SET_STRING(iovec[n++], identifier);
-                IOVEC_SET_STRING(iovec[n++], " -: ");
-		}
+        if (identifier) sm.app_name = identifier;
 
-		/* MSGID */
-		IOVEC_SET_STRING(iovec[n++], "- ");
+        sm.message = message;
 
-		/* STRUCTURED-DATA */
-		IOVEC_SET_STRING(iovec[n++], "- ");
-
-        /* message */
-        IOVEC_SET_STRING(iovec[n++], message);
+        /* fill iovec from SyslogMessage struct */
+        n = sizeof(iovec)/sizeof(struct iovec);
+        if (syslog_fill_iovec(&sm, &iovec, &n) <= 0)
+                return;
 
         forward_syslog_iovec(s, iovec, n, ucred, tv);
-        forward_remote_syslog(s, iovec, n); 
+        forward_remote_syslog_iovec(s, iovec, n);
 
         free(ident_buf);
 }
@@ -431,15 +458,15 @@ void server_process_syslog_message(
         int priority = LOG_USER | LOG_INFO;
         char *identifier = NULL, *pid = NULL;
         const char *orig;
+        SyslogMessage sm;
 
         assert(s);
         assert(buf);
 
+        sm.msgid = "server_process_syslog_message";
+
         orig = buf;
         syslog_parse_priority(&buf, &priority, true);
-
-        if (s->forward_to_syslog)
-                forward_syslog_raw(s, priority, orig, ucred, tv);
 
         syslog_skip_date((char**) &buf);
         syslog_parse_identifier(&buf, &identifier, &pid);
@@ -457,6 +484,7 @@ void server_process_syslog_message(
 
         if (asprintf(&syslog_priority, "PRIORITY=%i", priority & LOG_PRIMASK) >= 0)
                 IOVEC_SET_STRING(iovec[n++], syslog_priority);
+        sm.priority = priority;
 
         if (priority & LOG_FACMASK)
                 if (asprintf(&syslog_facility, "SYSLOG_FACILITY=%i", LOG_FAC(priority)) >= 0)
@@ -466,19 +494,34 @@ void server_process_syslog_message(
                 syslog_identifier = strappend("SYSLOG_IDENTIFIER=", identifier);
                 if (syslog_identifier)
                         IOVEC_SET_STRING(iovec[n++], syslog_identifier);
+                sm.app_name = identifier;
         }
 
         if (pid) {
                 syslog_pid = strappend("SYSLOG_PID=", pid);
                 if (syslog_pid)
                         IOVEC_SET_STRING(iovec[n++], syslog_pid);
+                if (parse_pid(pid, &sm.procid)) sm.procid = 0;
         }
 
         message = strappend("MESSAGE=", buf);
-        if (message)
+        if (message) {
                 IOVEC_SET_STRING(iovec[n++], message);
+                sm.message = message;
+        }
 
         server_dispatch_message(s, iovec, n, ELEMENTSOF(iovec), ucred, tv, label, label_len, NULL, priority, 0);
+
+        /* timestamp for SyslogMessage struct: */
+        time_t t;
+        t = tv ? tv->tv_sec : ((time_t) (now(CLOCK_REALTIME) / USEC_PER_SEC));
+        if (!localtime_r(&t, &sm.timestamp))
+                return;
+        if (s->forward_to_syslog)
+                forward_syslog_raw(s, priority, orig, ucred, tv);
+        if (s->forward_to_remote_syslog)
+                forward_remote_syslog_iovec(s, iovec, n);
+
 
         free(message);
         free(identifier);
@@ -566,3 +609,5 @@ void server_maybe_warn_forward_syslog_missed(Server *s) {
         s->n_forward_syslog_missed = 0;
         s->last_warn_forward_syslog_missed = n;
 }
+
+// vim:expandtab:ts=8:sw=8
