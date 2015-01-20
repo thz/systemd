@@ -530,7 +530,7 @@ int server_open_syslog_socket(Server *s) {
                 log_error("Failed to add syslog server fd to event loop: %s", strerror(-r));
                 return r;
         }
-        maybe_open_remote_syslog(s);
+
         return 0;
 }
 
