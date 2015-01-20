@@ -129,7 +129,6 @@ static int maybe_open_remote_syslog(Server *s) {
                 log_warning("non AF_INET target for remote syslog forwarding configured. ignoring.");
                 return 0;
         }
-        s->remote_syslog_dest.in.sin_port = htons(514);
 
         fd = socket(AF_INET, SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK, 0);
         if (fd < 0) {

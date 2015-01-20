@@ -1359,6 +1359,8 @@ int config_parse_remotesyslogtarget(const char *unit,
 
         int r;
         int family;
+        char *sep;
+        int port = 514;
         union in_addr_union buffer;
 
         Server *s = userdata;
@@ -1369,6 +1371,15 @@ int config_parse_remotesyslogtarget(const char *unit,
         assert(lvalue);
         assert(rvalue);
         assert(data);
+
+        sep = strchr(rvalue, ':');
+        if (sep && sep[1]) { // \0 termination of rvalue assumed
+            if (sscanf(sep+1, "%i", &port) != 1) {
+                log_warning("failed to parse RemoteSyslogTarget port");
+                port = 514; // fallback to default instead of broken value
+            }
+            *sep='\0';
+        }
 
         r = in_addr_from_string_auto(rvalue, &family, &buffer);
         if (r < 0) {
@@ -1384,7 +1395,7 @@ int config_parse_remotesyslogtarget(const char *unit,
         }
         s->remote_syslog_dest.in.sin_family = family;
         s->remote_syslog_dest.in.sin_addr = buffer.in;
-        s->remote_syslog_dest.in.sin_port = htons(514);
+        s->remote_syslog_dest.in.sin_port = htons(port);
         return 0;
 }
 
