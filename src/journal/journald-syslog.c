@@ -22,9 +22,6 @@
 #include <unistd.h>
 #include <stddef.h>
 #include <sys/epoll.h>
-// #include <sys/socket.h>
-// #include <netinet/in.h>
-// #include <arpa/inet.h>
 
 #include "systemd/sd-messages.h"
 #include "socket-util.h"
@@ -115,10 +112,7 @@ static void forward_syslog_iovec(Server *s, const struct iovec *iovec, unsigned 
 static int maybe_open_remote_syslog(Server *s) {
         int fd;
 
-        if (!s) {
-                log_warning("server assertion failed.");
-                return 0;
-        }
+        assert(s);
 
         if (s->remote_syslog_fd > 0) return s->remote_syslog_fd;
 
@@ -129,7 +123,7 @@ static int maybe_open_remote_syslog(Server *s) {
                                 inet_ntoa(s->remote_syslog_dest.in.sin_addr));
         }
         if (s->remote_syslog_dest.in.sin_family != AF_INET) { // set in config
-                log_warning("server assertion failed.");
+                log_warning("non AF_INET target for remote syslog forwarding configured. ignoring.");
                 return 0;
         }
         s->remote_syslog_dest.in.sin_port = htons(514);
@@ -481,8 +475,7 @@ void server_process_syslog_message(
         free(syslog_pid);
 }
 
-
-static int server_open_syslog_socket_UNIX(Server *s) {
+int server_open_syslog_socket(Server *s) {
         int one, r;
 
         assert(s);
@@ -539,13 +532,8 @@ static int server_open_syslog_socket_UNIX(Server *s) {
                 log_error("Failed to add syslog server fd to event loop: %s", strerror(-r));
                 return r;
         }
-
+        maybe_open_remote_syslog(s);
         return 0;
-}
-
-int server_open_syslog_socket(Server *s) {
-        int r = server_open_syslog_socket_UNIX(s);
-        return r;
 }
 
 void server_maybe_warn_forward_syslog_missed(Server *s) {
@@ -564,4 +552,3 @@ void server_maybe_warn_forward_syslog_missed(Server *s) {
         s->n_forward_syslog_missed = 0;
         s->last_warn_forward_syslog_missed = n;
 }
-// vim:expandtab:ts=8:sw=8

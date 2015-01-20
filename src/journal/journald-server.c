@@ -1364,6 +1364,12 @@ int config_parse_remotesyslogtarget(const char *unit,
         Server *s = userdata;
         assert(s);
 
+        assert(filename);
+        assert(section);
+        assert(lvalue);
+        assert(rvalue);
+        assert(data);
+
         r = in_addr_from_string_auto(rvalue, &family, &buffer);
         if (r < 0) {
             log_syntax(unit, LOG_ERR, filename, line, EINVAL,
