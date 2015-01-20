@@ -22,9 +22,9 @@
 #include <unistd.h>
 #include <stddef.h>
 #include <sys/epoll.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+// #include <sys/socket.h>
+// #include <netinet/in.h>
+// #include <arpa/inet.h>
 
 #include "systemd/sd-messages.h"
 #include "socket-util.h"
@@ -146,10 +146,11 @@ static int maybe_open_remote_syslog(Server *s) {
 }
 
 static void forward_remote_syslog(Server *s, const struct iovec *iovec, unsigned n_iovec) {
-        if (!s) return;
-        if (!iovec) return;
+        int fd;
+        assert(s);
+        assert(iovec);
 
-        int fd = maybe_open_remote_syslog(s);
+        fd = maybe_open_remote_syslog(s);
         if (!fd) return;
         struct msghdr msghdr = {
                 .msg_iov = (struct iovec *) iovec,

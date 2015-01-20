@@ -23,7 +23,6 @@
 
 #include <inttypes.h>
 #include <stdbool.h>
-//#include <netinet/in.h>
 #include <sys/epoll.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -36,8 +35,7 @@
 #include "journald-rate-limit.h"
 #include "list.h"
 
-// #include "in-addr-util.h"
-// #include "socket-util.h"
+#include "socket-util.h"
 
 typedef enum Storage {
         STORAGE_AUTO,
@@ -105,7 +103,6 @@ typedef struct Server {
         bool forward_to_wall;
 
         union sockaddr_union remote_syslog_dest;
-
         unsigned n_forward_syslog_missed;
         usec_t last_warn_forward_syslog_missed;
 
