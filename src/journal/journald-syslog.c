@@ -190,7 +190,7 @@ void server_forward_syslog(Server *s, int priority, const char *identifier, cons
                 return;
 
         /* First: priority field */
-        snprintf(header_priority, sizeof(header_priority), "<%i>", priority);
+        snprintf(header_priority, sizeof(header_priority), "<%03i>", priority);
         char_array_0(header_priority);
         IOVEC_SET_STRING(iovec[n++], header_priority);
 

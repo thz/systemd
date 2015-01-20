@@ -1374,9 +1374,12 @@ int config_parse_remotesyslogtarget(const char *unit,
 
         sep = strchr(rvalue, ':');
         if (sep && sep[1]) { // \0 termination of rvalue assumed
-            if (sscanf(sep+1, "%i", &port) != 1) {
-                log_warning("failed to parse RemoteSyslogTarget port");
-                port = 514; // fallback to default instead of broken value
+            char *endptr = "invalid"; // anything != NULL for strtoul
+            port = strtoul(sep+1, &endptr, 10);
+            if (endptr) {
+                log_syntax(unit, LOG_ERR, filename, line, EINVAL,
+                        "RemoteSyslogTarget (port) is invalid. Ignoring port specification.");
+                port = 514;
             }
             *sep='\0';
         }

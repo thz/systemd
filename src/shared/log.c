@@ -376,7 +376,7 @@ static int write_to_syslog(
         if (syslog_fd < 0)
                 return 0;
 
-        snprintf(header_priority, sizeof(header_priority), "<%i>", level);
+        snprintf(header_priority, sizeof(header_priority), "<%03i>", level);
         char_array_0(header_priority);
 
         t = (time_t) (now(CLOCK_REALTIME) / USEC_PER_SEC);
