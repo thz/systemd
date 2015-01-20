@@ -22,6 +22,9 @@
 #include <unistd.h>
 #include <stddef.h>
 #include <sys/epoll.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include "systemd/sd-messages.h"
 #include "socket-util.h"
@@ -168,7 +171,7 @@ static void forward_syslog_raw(Server *s, int priority, const char *buffer, stru
 
         IOVEC_SET_STRING(iovec, buffer);
         forward_syslog_iovec(s, &iovec, 1, ucred, tv);
-        forward_remote_syslog(s, &iovec, 1); 
+        forward_remote_syslog(s, &iovec, 1);
 }
 
 void server_forward_syslog(Server *s, int priority, const char *identifier, const char *message, struct ucred *ucred, struct timeval *tv) {
