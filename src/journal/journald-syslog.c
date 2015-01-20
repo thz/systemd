@@ -174,8 +174,8 @@ static void forward_syslog_raw(Server *s, int priority, const char *buffer, stru
 }
 
 void server_forward_syslog(Server *s, int priority, const char *identifier, const char *message, struct ucred *ucred, struct timeval *tv) {
-        struct iovec iovec[5];
-        char header_priority[6], header_time[64], header_pid[16];
+        struct iovec iovec[9];
+        char header_priority[8], header_time[64], header_pid[16];
         int n = 0;
         time_t t;
         struct tm *tm;
@@ -189,8 +189,16 @@ void server_forward_syslog(Server *s, int priority, const char *identifier, cons
         if (LOG_PRI(priority) > s->max_level_syslog)
                 return;
 
-        /* First: priority field */
-        snprintf(header_priority, sizeof(header_priority), "<%03i>", priority);
+		/* obey rfc5424:
+		 *       SYSLOG-MSG      = HEADER SP STRUCTURED-DATA [SP MSG]
+		 *
+		 *       HEADER          = PRI VERSION SP TIMESTAMP SP HOSTNAME
+		 *                         SP APP-NAME SP PROCID SP MSGID
+		 * [...]
+		 */
+
+        /* First: priority field and VERSION */
+        snprintf(header_priority, sizeof(header_priority), "<%03i>1 ", priority);
         char_array_0(header_priority);
         IOVEC_SET_STRING(iovec[n++], header_priority);
 
@@ -199,30 +207,39 @@ void server_forward_syslog(Server *s, int priority, const char *identifier, cons
         tm = localtime(&t);
         if (!tm)
                 return;
-        if (strftime(header_time, sizeof(header_time), "%h %e %T ", tm) <= 0)
+        if (strftime(header_time, sizeof(header_time), "%Y-%m-%dT%H:%M:%S%z ", tm) <= 0)
                 return;
-        IOVEC_SET_STRING(iovec[n++], header_time);
+        IOVEC_SET_STRING(iovec[n++], header_time); // TIMESTAMP
 
-        /* Third: identifier and PID */
+		/* HOSTNAME */
+		IOVEC_SET_STRING(iovec[n++], "journald-host ");
+
+        /* Third: identifier and PID (a.k.a. APP-NAME and PROCID) */
         if (ucred) {
                 if (!identifier) {
                         get_process_comm(ucred->pid, &ident_buf);
                         identifier = ident_buf;
                 }
 
-                snprintf(header_pid, sizeof(header_pid), "["PID_FMT"]: ", ucred->pid);
+                snprintf(header_pid, sizeof(header_pid), " ["PID_FMT"]: ", ucred->pid);
                 char_array_0(header_pid);
 
-                if (identifier)
-                        IOVEC_SET_STRING(iovec[n++], identifier);
-
-                IOVEC_SET_STRING(iovec[n++], header_pid);
-        } else if (identifier) {
+                if (!identifier) identifier = "-";
                 IOVEC_SET_STRING(iovec[n++], identifier);
-                IOVEC_SET_STRING(iovec[n++], ": ");
-        }
+                IOVEC_SET_STRING(iovec[n++], header_pid);
+        } else {
+                if (!identifier) identifier = "-";
+                IOVEC_SET_STRING(iovec[n++], identifier);
+                IOVEC_SET_STRING(iovec[n++], " -: ");
+		}
 
-        /* Fourth: message */
+		/* MSGID */
+		IOVEC_SET_STRING(iovec[n++], "- ");
+
+		/* STRUCTURED-DATA */
+		IOVEC_SET_STRING(iovec[n++], "- ");
+
+        /* message */
         IOVEC_SET_STRING(iovec[n++], message);
 
         forward_syslog_iovec(s, iovec, n, ucred, tv);
