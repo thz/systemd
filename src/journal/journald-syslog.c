@@ -172,7 +172,7 @@ static void forward_syslog_raw(Server *s, int priority, const char *buffer, stru
         forward_syslog_iovec(s, &iovec, 1, ucred, tv);
 }
 
-static int syslog_fill_iovec(SyslogMessage *sm, struct iovec **iovec, int *n_iovec) {
+static int syslog_fill_iovec(SyslogMessage *sm, struct iovec *iovec, int *n_iovec) {
         enum rfc5424 {PRIVER=0, TIMESTAMP, HOSTNAME, APPNAME, PROCID, MSGID, STRUDATA, MSG};
 
         if (*n_iovec < MSG+1) return -1;
@@ -180,31 +180,31 @@ static int syslog_fill_iovec(SyslogMessage *sm, struct iovec **iovec, int *n_iov
         /* priority and version */
         snprintf(sm->_priver, 8, "<%03i>1 ", sm->priority);
         sm->_priver[7] = 0;
-        *iovec[PRIVER]->iov_base = sm->_priver;
-        *iovec[PRIVER]->iov_len = 7;
+        iovec[PRIVER].iov_base = sm->_priver;
+        iovec[PRIVER].iov_len = 7;
 
         /* timestamp */
-        if (strftime(header_time, sizeof(header_time), "%Y-%m-%dT%H:%M:%S%z ", tm) <= 0) {
-                IOVEC_SET_STRING(*iovec[TIMESTAMP], "- ");
+        if (strftime(sm->_timestamp, sizeof(sm->_timestamp), "%Y-%m-%dT%H:%M:%S%z ", &sm->timestamp) <= 0) {
+                IOVEC_SET_STRING(iovec[TIMESTAMP], "- ");
         } else {
-                IOVEC_SET_STRING(*iovec[TIMESTAMP], sm->_timestamp);
+                IOVEC_SET_STRING(iovec[TIMESTAMP], sm->_timestamp);
         }
 
-        IOVEC_SET_STRING(*iovec[HOSTNAME], "journald-host ");
-        IOVEC_SET_STRING(*iovec[APPNAME], "appname ");
+        IOVEC_SET_STRING(iovec[HOSTNAME], "journald-host ");
+        IOVEC_SET_STRING(iovec[APPNAME], "appname ");
 
         if (sm->procid) {
                 snprintf(sm->_procid, sizeof(sm->_procid), "["PID_FMT"]: ", sm->procid);
                 char_array_0(sm->_procid);
         } else {
-                sm->_procid = "- ";
+                sprintf(sm->_procid, "- ");
         }
-        IOVEC_SET_STRING(*iovec[PROCID], sm->_procid);
+        IOVEC_SET_STRING(iovec[PROCID], sm->_procid);
 
-        IOVEC_SET_STRING(*iovec[MSGID], "msgid ");
-        IOVEC_SET_STRING(*iovec[STRUDATA], "strudata ");
+        IOVEC_SET_STRING(iovec[MSGID], "msgid ");
+        IOVEC_SET_STRING(iovec[STRUDATA], "strudata ");
 
-        IOVEC_SET_STRING(*iovec[MSG], sm->message);
+        IOVEC_SET_STRING(iovec[MSG], sm->message);
         return *n_iovec;
 }
 
@@ -224,7 +224,6 @@ void server_forward_syslog(Server *s, int priority, const char *identifier, cons
         struct iovec iovec[9];
         int n = 0;
         time_t t;
-        struct tm tm;
         char *ident_buf = NULL;
         SyslogMessage sm;
 
@@ -266,7 +265,7 @@ void server_forward_syslog(Server *s, int priority, const char *identifier, cons
 
         /* fill iovec from SyslogMessage struct */
         n = sizeof(iovec)/sizeof(struct iovec);
-        if (syslog_fill_iovec(&sm, &iovec, &n) <= 0)
+        if (syslog_fill_iovec(&sm, (struct iovec*)iovec, &n) <= 0)
                 return;
 
         if (s->forward_to_syslog)
@@ -461,6 +460,7 @@ void server_process_syslog_message(
         int priority = LOG_USER | LOG_INFO;
         char *identifier = NULL, *pid = NULL;
         const char *orig;
+        time_t t;
         SyslogMessage sm;
 
         assert(s);
@@ -510,18 +510,29 @@ void server_process_syslog_message(
         message = strappend("MESSAGE=", buf);
         if (message) {
                 IOVEC_SET_STRING(iovec[n++], message);
-                sm.message = message;
+                sm.message = buf;
         }
 
         server_dispatch_message(s, iovec, n, ELEMENTSOF(iovec), ucred, tv, label, label_len, NULL, priority, 0);
 
         /* timestamp for SyslogMessage struct: */
-        time_t t;
         t = tv ? tv->tv_sec : ((time_t) (now(CLOCK_REALTIME) / USEC_PER_SEC));
         if (!localtime_r(&t, &sm.timestamp))
                 return;
+
+        /* fill iovec from SyslogMessage struct */
+        assert(sizeof(iovec)/sizeof(struct iovec) >= 9);
+        n = sizeof(iovec)/sizeof(struct iovec);
+        if (syslog_fill_iovec(&sm, (struct iovec*)iovec, &n) <= 0)
+                return;
+
         if (s->forward_to_syslog)
-                forward_syslog_raw(s, priority, orig, ucred, tv);
+                forward_syslog_iovec(s, iovec, n, ucred, tv);
+                /* TODO: decision between raw and rewritten rfc5424
+                 * should be configurable
+                 * forward_syslog_raw(s, priority, orig, ucred, tv);
+                 */
+
         if (s->forward_to_remote_syslog)
                 forward_remote_syslog_iovec(s, iovec, n);
 

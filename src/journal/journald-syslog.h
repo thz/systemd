@@ -42,7 +42,7 @@ typedef struct SyslogMessage {
 
         char _priver[8];
         char _procid[16];
-        const char _timestamp[64];
+        char _timestamp[64];
 
 } SyslogMessage;
 

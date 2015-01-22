@@ -1380,7 +1380,7 @@ int config_parse_remotesyslogtarget(const char *unit,
 
         sep = strchr(rvalue, ':');
         if (sep && sep[1]) { // \0 termination of rvalue assumed
-            char *endptr = "invalid"; // anything != NULL for strtoul
+            char *endptr = (char*)"invalid"; // anything != NULL for strtoul
             port = strtoul(sep+1, &endptr, 10);
             if (endptr) {
                 log_syntax(unit, LOG_ERR, filename, line, EINVAL,
