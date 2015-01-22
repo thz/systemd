@@ -269,8 +269,11 @@ void server_forward_syslog(Server *s, int priority, const char *identifier, cons
         if (syslog_fill_iovec(&sm, &iovec, &n) <= 0)
                 return;
 
-        forward_syslog_iovec(s, iovec, n, ucred, tv);
-        forward_remote_syslog_iovec(s, iovec, n);
+        if (s->forward_to_syslog)
+                forward_syslog_iovec(s, iovec, n, ucred, tv);
+
+        if (s->forward_to_remote_syslog)
+                forward_remote_syslog_iovec(s, iovec, n);
 
         free(ident_buf);
 }
