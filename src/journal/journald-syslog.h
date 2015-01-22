@@ -34,7 +34,7 @@ typedef struct SyslogMessage {
         int priority;
         struct tm timestamp;
         const char *hostname;
-        const char *app_name;
+        const char *appname;
         pid_t procid;
         const char *msgid;
         /* we don't do STRUCTURED-DATA */
