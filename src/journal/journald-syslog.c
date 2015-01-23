@@ -178,12 +178,17 @@ static int syslog_fill_iovec(SyslogMessage *sm, struct iovec *iovec, unsigned *n
 
         if (*n_iovec < MSG+1) return -1;
         assert(sm);
+        /* valid rfc5424 range of prioriy is 0..191
+         * (3 bit severity from 0 to 7;
+         *  5 bit facility from 0 to 23)
+         */
+        if (sm->priority>>3>23)
+                sm->priority = (sm->priority&7) + (23<<3); /* limit facility to 0..23 */
 
         /* priority and version */
-        snprintf(sm->_priver, 8, "<%03i>1 ", sm->priority);
-        sm->_priver[7] = 0;
-        iovec[PRIVER].iov_base = sm->_priver;
-        iovec[PRIVER].iov_len = 7;
+        zero(sm->_priver);
+        sprintf(sm->_priver, "<%i>1 ", sm->priority);
+        IOVEC_SET_STRING(iovec[PRIVER], sm->_priver);
 
         /* timestamp */
         if (strftime(sm->_timestamp, sizeof(sm->_timestamp), "%Y-%m-%dT%H:%M:%S%z ", &sm->timestamp) <= 0) {
@@ -215,21 +220,20 @@ static int syslog_fill_iovec(SyslogMessage *sm, struct iovec *iovec, unsigned *n
         return *n_iovec;
 }
 
-static const char *dash="-";
 static void syslog_init_message(SyslogMessage *sm) {
         /* some parts of a rfc5424 syslog message may
          * be carry a "-" if respective data is n/a.
          */
         sm->priority = 14;
         sm->procid = 0;
-        sm->hostname = dash;
-        sm->appname = "-";
-        sm->msgid = "-";
-        sm->message = "???";
+        sm->hostname =
+        sm->appname =
+        sm->msgid =
+        sm->message = "-";
 }
 
 void server_forward_syslog(Server *s, int priority, const char *identifier, const char *message, struct ucred *ucred, struct timeval *tv) {
-        struct iovec iovec[9];
+        struct iovec iovec[10];
         int n = 0;
         time_t t;
         char *ident_buf = NULL;
@@ -255,8 +259,6 @@ void server_forward_syslog(Server *s, int priority, const char *identifier, cons
 
         if (!isempty(s->hostname_field))
                 sm.hostname = s->hostname_field;
-
-        sm.msgid = "server_forward_syslog";
 
         if (ucred) {
                 if (!identifier) {
@@ -477,7 +479,6 @@ void server_process_syslog_message(
 
         if (!isempty(s->hostname_field))
                 sm.hostname = s->hostname_field;
-        sm.msgid = "server-process-syslog-message";
 
         syslog_parse_priority(&buf, &priority, true);
 
