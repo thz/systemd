@@ -174,8 +174,10 @@ static void forward_syslog_raw(Server *s, int priority, const char *buffer, stru
 
 static int syslog_fill_iovec(SyslogMessage *sm, struct iovec *iovec, unsigned *n_iovec) {
         enum rfc5424 {PRIVER=0, TIMESTAMP, HOSTNAME, SP_HOSTNAME, APPNAME, SP_APPNAME, PROCID, MSGID, STRUDATA, MSG};
+        int offset;
 
         if (*n_iovec < MSG+1) return -1;
+        assert(sm);
 
         /* priority and version */
         snprintf(sm->_priver, 8, "<%03i>1 ", sm->priority);
@@ -190,7 +192,9 @@ static int syslog_fill_iovec(SyslogMessage *sm, struct iovec *iovec, unsigned *n
                 IOVEC_SET_STRING(iovec[TIMESTAMP], sm->_timestamp);
         }
 
-        IOVEC_SET_STRING(iovec[HOSTNAME], sm->hostname);
+        offset = 0;
+        if (strncmp("_HOSTNAME=", sm->hostname, 10) == 0) offset = 10;
+        IOVEC_SET_STRING(iovec[HOSTNAME], sm->hostname+offset);
         IOVEC_SET_STRING(iovec[SP_HOSTNAME], " ");
         IOVEC_SET_STRING(iovec[APPNAME], sm->appname);
         IOVEC_SET_STRING(iovec[SP_APPNAME], " ");
@@ -211,13 +215,14 @@ static int syslog_fill_iovec(SyslogMessage *sm, struct iovec *iovec, unsigned *n
         return *n_iovec;
 }
 
+static const char *dash="-";
 static void syslog_init_message(SyslogMessage *sm) {
         /* some parts of a rfc5424 syslog message may
          * be carry a "-" if respective data is n/a.
          */
         sm->priority = 14;
         sm->procid = 0;
-        sm->hostname = "-";
+        sm->hostname = dash;
         sm->appname = "-";
         sm->msgid = "-";
         sm->message = "???";
@@ -468,7 +473,11 @@ void server_process_syslog_message(
         assert(s);
         assert(buf);
 
-        sm.msgid = "server_process_syslog_message";
+        syslog_init_message(&sm);
+
+        if (!isempty(s->hostname_field))
+                sm.hostname = s->hostname_field;
+        sm.msgid = "server-process-syslog-message";
 
         syslog_parse_priority(&buf, &priority, true);
 
@@ -522,7 +531,6 @@ void server_process_syslog_message(
                 return;
 
         /* fill iovec from SyslogMessage struct */
-        assert(sizeof(iovec)/sizeof(struct iovec) >= 9);
         n = sizeof(iovec)/sizeof(struct iovec);
         if (syslog_fill_iovec(&sm, (struct iovec*)iovec, &n) <= 0)
                 return;
@@ -536,7 +544,6 @@ void server_process_syslog_message(
 
         if (s->forward_to_remote_syslog)
                 forward_remote_syslog_iovec(s, iovec, n);
-
 
         free(message);
         free(identifier);
