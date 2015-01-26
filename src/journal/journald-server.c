@@ -1382,7 +1382,7 @@ int config_parse_remotesyslogtarget(const char *unit,
         if (sep && sep[1]) { // \0 termination of rvalue assumed
             char *endptr = (char*)"invalid"; // anything != NULL for strtoul
             port = strtoul(sep+1, &endptr, 10);
-            if (endptr) {
+            if ((endptr && *endptr) || (port <= 0 || port > UINT16_MAX)) {
                 log_syntax(unit, LOG_ERR, filename, line, EINVAL,
                         "RemoteSyslogTarget (port) is invalid. Ignoring port specification.");
                 port = 514;
