@@ -632,5 +632,3 @@ void server_maybe_warn_forward_syslog_missed(Server *s) {
         s->n_forward_syslog_missed = 0;
         s->last_warn_forward_syslog_missed = n;
 }
-
-// vim:expandtab:ts=8:sw=8
